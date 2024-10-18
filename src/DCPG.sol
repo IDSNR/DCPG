@@ -36,6 +36,23 @@ contract DCPG is ReentrancyGuard{
     error DCPG__DoesNotHaveIndex();
     error DCPG__DifferentLength();
     error DCPG__IsNotOwner();
+    error DCPG__MethodNotAllowed();
+
+
+    event AddCryptocurrency(
+        string indexed cryptocurrency,
+        address indexed priceFeed
+    );
+
+    event TakeCryptocurrency(
+        uint256 indexed index
+    );
+
+    event NewPaymentGateway(
+        uint256 indexed amount,
+        uint256 indexed method,
+        string indexed api_endpoint
+    );
 
     ///////////////
     // Variables //
@@ -45,9 +62,11 @@ contract DCPG is ReentrancyGuard{
 
     address[] private s_priceFeedAddresses;
     string[] private s_cryptocurrencySymbols;
+    address[] private s_cryptocurrencyAddresses;
     uint256 internal s_PaymentId = 0;
 
     mapping(string => address) private s_symbolToPriceFeedAddress;
+    mapping(string => address) private s_symbolToTokenAddress;
 
     mapping(uint256 => address) private s_idToPaymentGatewayAddress;
     mapping(address => uint256[]) private s_addressToPaymentGateways;
@@ -94,18 +113,21 @@ contract DCPG is ReentrancyGuard{
     // Functions //
     ///////////////
 
-    constructor(address[] memory priceFeeds, string[] memory cryptoSymbols){
+    constructor(address[] memory priceFeeds, string[] memory cryptoSymbols, address[] memory tokenAddresses){
         s_priceFeedAddresses = priceFeeds;
         s_cryptocurrencySymbols = cryptoSymbols;
+        s_cryptocurrencyAddresses = tokenAddresses;
         uint256 length_one = s_priceFeedAddresses.length;
         uint256 length_two = s_cryptocurrencySymbols.length;
+        uint256 length_three = s_cryptocurrencyAddresses.length;
 
-        if(length_one != length_two){
+        if((length_one != length_two) || (length_three != length_two)){
             revert DCPG__DifferentLength();
         }
 
         for(uint256 i=0; i<length_one; i++){
             s_symbolToPriceFeedAddress[cryptoSymbols[i]] = priceFeeds[i];
+            s_symbolToTokenAddress[cryptoSymbols[i]] = tokenAddresses[i];
         }
     }
 
@@ -126,21 +148,29 @@ contract DCPG is ReentrancyGuard{
         return price * amount;
     }
 
-    function createNewPaymentGatewayOneOff(string[] memory cryptos, address[] memory priceFeedAddresses, uint256 method, string memory api_endpoint, bytes calldata callData) public returns(uint256){
-        PaymentGatewayOneOff paymentGatewayOneOff = new PaymentGatewayOneOff(cryptos, priceFeedAddresses, api_endpoint, callData, msg.sender);
-        s_idToPaymentGatewayAddress[s_PaymentId] = address(paymentGatewayOneOff);
-        s_addressToPaymentGateways[msg.sender].push(s_PaymentId);
-        s_PaymentId++;
-        return s_PaymentId-1;
+    function createNewPaymentGatewayOneOff(string[] memory cryptos, address[] memory priceFeedAddresses, address[] memory tokenAddresses, uint256 method, string memory api_endpoint, bytes calldata callData, uint256 amount) public returns(uint256){
+        if(method == uint256(Method.ONEOFF)){
+            PaymentGatewayOneOff paymentGatewayOneOff = new PaymentGatewayOneOff(cryptos, priceFeedAddresses, tokenAddresses, api_endpoint, callData, msg.sender, amount);
+            s_idToPaymentGatewayAddress[s_PaymentId] = address(paymentGatewayOneOff);
+            s_addressToPaymentGateways[msg.sender].push(s_PaymentId);
+            s_PaymentId++;
+            emit NewPaymentGateway(amount, method, api_endpoint);
+            return s_PaymentId-1;
+        } else {
+            revert DCPG__MethodNotAllowed();
+        }
     }
 
-    function addCryptocurrency(address priceFeed, string calldata cryptoSymbol)
+    function addCryptocurrency(address priceFeed, string calldata cryptoSymbol, address tokenAddress)
         external
         isOwnerProxy
     {
         s_priceFeedAddresses.push(priceFeed);
         s_cryptocurrencySymbols.push(cryptoSymbol);
         s_symbolToPriceFeedAddress[cryptoSymbol] = priceFeed;
+        s_cryptocurrencyAddresses.push(tokenAddress);
+        s_symbolToTokenAddress[cryptoSymbol] = tokenAddress;
+        emit AddCryptocurrency(cryptoSymbol, priceFeed);
     }
 
     function takeCryptocurrency(uint256 index)
@@ -151,10 +181,21 @@ contract DCPG is ReentrancyGuard{
         s_priceFeedAddresses.pop();
         s_cryptocurrencySymbols[index] = s_cryptocurrencySymbols[s_cryptocurrencySymbols.length-1];
         s_cryptocurrencySymbols.pop();
+        s_cryptocurrencyAddresses[index] = s_cryptocurrencyAddresses[s_cryptocurrencyAddresses.length-1];
+        s_cryptocurrencyAddresses.pop();
+        emit TakeCryptocurrency(index);
     }
 
     // Getter functions
     // External View
+
+    function getTokenAddress(uint256 index) external view returns(address){
+        return s_cryptocurrencyAddresses[index];
+    }
+
+    function getTokenAddressOnCryptocurrency(string memory crypto) external view returns(address){
+        return s_symbolToTokenAddress[crypto];
+    }
 
     function getPriceFeedOnCryptocurrency(string memory crypto) external view returns(address){
         return s_symbolToPriceFeedAddress[crypto];

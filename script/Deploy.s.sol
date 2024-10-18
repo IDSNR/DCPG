@@ -32,24 +32,12 @@ contract DeployScript is Script {
     DCPG dcpg;
     HelperConfig helperConfig;
 
-    constructor() {
-        
-        /*
-        HelperConfig.NetworkConfig memory config = helperConfig.getNetworkConfig(); // Access the public struct directly
-
-        // Use dynamic arrays since the size is determined at runtime
-        numberCryptocurrencies = config.numberCryptocurrencies;
-        arrayOfPriceFeedAddresses = config.priceFeedAddresses;
-        nameOfSymbols = config.nameOfSymbols;
-        */
-    }
-
     function run() public returns (DCPG, HelperConfig) {
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
         vm.startBroadcast(deployerPrivateKey);
         helperConfig = new HelperConfig();
         HelperConfig.NetworkConfig memory config = helperConfig.getNetworkConfig();
-        dcpg = new DCPG(config.priceFeedAddresses, config.nameOfSymbols);
+        dcpg = new DCPG(config.priceFeedAddresses, config.nameOfSymbols, config.tokenAddresses);
         vm.stopBroadcast();
         return (
             dcpg,
